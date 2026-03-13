@@ -47,7 +47,7 @@ async def stream_agent_events(lead: Lead, db: Session):
         yield f"data: {json.dumps({'event': 'error', 'message': str(e)})}\n\n"
 
 
-@router.post("/run/{lead_id}")
+@router.get("/run/{lead_id}")
 async def run_agent_pipeline(lead_id: int, db: Session = Depends(get_db)):
     """Trigger the full 3-agent pipeline for a lead. Streams progress via SSE."""
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
