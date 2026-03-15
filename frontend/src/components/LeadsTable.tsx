@@ -31,6 +31,8 @@ const recLabel: Record<string, string> = {
     drop_lead: 'Drop lead',
 }
 
+const filters = ['all', 'new', 'qualified', 'contacted', 'closed', 'hot', 'warm', 'cold'] as const
+
 export default function LeadsTable({ leads, onRunAgents, onDelete, onStatusChange }: Props) {
     const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
     const [sortKey, setSortKey] = useState<keyof Lead>('created_at')
@@ -42,7 +44,10 @@ export default function LeadsTable({ leads, onRunAgents, onDelete, onStatusChang
         else { setSortKey(key); setSortDir('asc') }
     }
 
-    const filtered = leads.filter(l => filter === 'all' || l.status === filter || l.score === filter)
+    const filtered = leads.filter(l =>
+        filter === 'all' || l.status === filter || l.score === filter
+    )
+
     const sorted = [...filtered].sort((a, b) => {
         const av = a[sortKey] ?? ''
         const bv = b[sortKey] ?? ''
@@ -50,13 +55,7 @@ export default function LeadsTable({ leads, onRunAgents, onDelete, onStatusChang
         return sortDir === 'asc' ? cmp : -cmp
     })
 
-    const SortIcon = ({ col }: { col: keyof Lead }) => (
-        <span style={{ marginLeft: '4px', fontSize: '10px', color: sortKey === col ? 'var(--black)' : 'var(--grey-300)' }}>
-            {sortKey === col ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}
-        </span>
-    )
-
-    const thStyle = (col: keyof Lead): React.CSSProperties => ({
+    const thBase: React.CSSProperties = {
         padding: '10px 14px',
         fontSize: '11px',
         fontWeight: 600,
@@ -69,17 +68,42 @@ export default function LeadsTable({ leads, onRunAgents, onDelete, onStatusChang
         whiteSpace: 'nowrap',
         borderBottom: '1px solid var(--grey-200)',
         background: 'var(--white)',
-    })
+    }
+
+    const headers: { label: string; col: keyof Lead }[] = [
+        { label: 'Name', col: 'name' },
+        { label: 'Company', col: 'company' },
+        { label: 'Email', col: 'email' },
+        { label: 'Score', col: 'score' },
+        { label: 'Status', col: 'status' },
+        { label: 'Recommendation', col: 'advisor_recommendation' },
+        { label: 'Message', col: 'message' },
+    ]
 
     return (
         <>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
-                {['all', 'new', 'qualified', 'contacted', 'closed', 'hot', 'warm', 'cold'].map(f => (
-                    <button key={f} onClick={() => setFilter(f)} style={{ padding: '5px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: 500, background: filter === f ? 'var(--black)' : 'var(--white)', color: filter === f ? 'var(--white)' : 'var(--grey-600)', border: `1px solid ${filter === f ? 'var(--black)' : 'var(--grey-200)'}`, textTransform: 'capitalize' }}>
+                {filters.map(f => (
+                    <button
+                        key={f}
+                        onClick={() => setFilter(f)}
+                        style={{
+                            padding: '5px 12px',
+                            borderRadius: '999px',
+                            fontSize: '12px',
+                            fontWeight: 500,
+                            background: filter === f ? 'var(--black)' : 'var(--white)',
+                            color: filter === f ? 'var(--white)' : 'var(--grey-500)',
+                            border: `1px solid ${filter === f ? 'var(--black)' : 'var(--grey-200)'}`,
+                            textTransform: 'capitalize',
+                        }}
+                    >
                         {f}
                     </button>
                 ))}
-                <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--grey-400)' }}>{sorted.length} lead{sorted.length !== 1 ? 's' : ''}</span>
+                <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--grey-400)' }}>
+                    {sorted.length} lead{sorted.length !== 1 ? 's' : ''}
+                </span>
             </div>
 
             <div style={{ background: 'var(--white)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--grey-200)', overflow: 'hidden' }}>
@@ -90,61 +114,84 @@ export default function LeadsTable({ leads, onRunAgents, onDelete, onStatusChang
                     </div>
                 ) : (
                     <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: '900px' }}>
                             <colgroup>
-                                <col style={{ width: '160px' }} />
                                 <col style={{ width: '150px' }} />
-                                <col style={{ width: '190px' }} />
-                                <col style={{ width: '90px' }} />
-                                <col style={{ width: '110px' }} />
+                                <col style={{ width: '140px' }} />
+                                <col style={{ width: '180px' }} />
+                                <col style={{ width: '85px' }} />
+                                <col style={{ width: '105px' }} />
                                 <col style={{ width: '140px' }} />
                                 <col style={{ width: '100%' }} />
-                                <col style={{ width: '110px' }} />
+                                <col style={{ width: '105px' }} />
                             </colgroup>
+
                             <thead>
                                 <tr>
-                                    {[
-                                        { label: 'Name', col: 'name' },
-                                        { label: 'Company', col: 'company' },
-                                        { label: 'Email', col: 'email' },
-                                        { label: 'Score', col: 'score' },
-                                        { label: 'Status', col: 'status' },
-                                        { label: 'Recommendation', col: 'advisor_recommendation' },
-                                        { label: 'Message', col: 'message' },
-                                        { label: 'Actions', col: null },
-                                    ].map(({ label, col }) => (
-                                        <th key={label} style={thStyle(col as keyof Lead)} onClick={() => col && toggleSort(col as keyof Lead)}>
-                                            {label}{col && <SortIcon col={col as keyof Lead} />}
+                                    {headers.map(({ label, col }) => (
+                                        <th
+                                            key={label}
+                                            style={thBase}
+                                            onClick={() => toggleSort(col)}
+                                        >
+                                            {label}
+                                            <span style={{ marginLeft: '4px', fontSize: '10px', color: sortKey === col ? 'var(--black)' : 'var(--grey-300)' }}>
+                                                {sortKey === col ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}
+                                            </span>
                                         </th>
                                     ))}
+                                    <th style={{ ...thBase, cursor: 'default' }}>Actions</th>
                                 </tr>
                             </thead>
+
                             <tbody>
                                 {sorted.map((lead, i) => {
                                     const sq = scoreColors[lead.score] ?? scoreColors.unscored
                                     const sc = statusColors[lead.status] ?? statusColors.new
+
                                     return (
                                         <tr
                                             key={lead.id}
                                             onClick={() => setSelectedLead(lead)}
-                                            style={{ borderBottom: i < sorted.length - 1 ? '1px solid var(--grey-100)' : 'none', cursor: 'pointer', transition: 'background 0.1s' }}
-                                            onMouseEnter={e => e.currentTarget.style.background = 'var(--grey-50)'}
-                                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                            style={{
+                                                borderBottom: i < sorted.length - 1 ? '1px solid var(--grey-100)' : 'none',
+                                                cursor: 'pointer',
+                                                transition: 'background 0.1s',
+                                            }}
+                                            onMouseEnter={e => (e.currentTarget.style.background = 'var(--grey-50)')}
+                                            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                                         >
-                                            <td style={{ padding: '13px 14px', fontSize: '14px', fontWeight: 600, color: 'var(--black)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lead.name}</td>
-                                            <td style={{ padding: '13px 14px', fontSize: '13px', color: 'var(--grey-600)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lead.company}</td>
-                                            <td style={{ padding: '13px 14px', fontSize: '13px', color: 'var(--grey-500)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lead.email}</td>
-                                            <td style={{ padding: '13px 14px' }}>
-                                                <span style={{ fontSize: '11px', fontWeight: 700, padding: '3px 9px', borderRadius: '999px', background: sq.bg, color: sq.color, textTransform: 'uppercase', letterSpacing: '0.3px', whiteSpace: 'nowrap' }}>{lead.score}</span>
+                                            <td style={{ padding: '13px 14px', fontSize: '14px', fontWeight: 600, color: 'var(--black)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                {lead.name}
+                                            </td>
+                                            <td style={{ padding: '13px 14px', fontSize: '13px', color: 'var(--grey-600)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                {lead.company}
+                                            </td>
+                                            <td style={{ padding: '13px 14px', fontSize: '13px', color: 'var(--grey-500)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                {lead.email}
                                             </td>
                                             <td style={{ padding: '13px 14px' }}>
-                                                <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 9px', borderRadius: '999px', background: sc.bg, color: sc.color, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{lead.status}</span>
+                                                <span style={{ fontSize: '11px', fontWeight: 700, padding: '3px 9px', borderRadius: '999px', background: sq.bg, color: sq.color, textTransform: 'uppercase', letterSpacing: '0.3px', whiteSpace: 'nowrap' }}>
+                                                    {lead.score}
+                                                </span>
+                                            </td>
+                                            <td style={{ padding: '13px 14px' }}>
+                                                <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 9px', borderRadius: '999px', background: sc.bg, color: sc.color, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>
+                                                    {lead.status}
+                                                </span>
                                             </td>
                                             <td style={{ padding: '13px 14px', fontSize: '12px', color: 'var(--grey-500)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                {lead.advisor_recommendation ? (recLabel[lead.advisor_recommendation] ?? lead.advisor_recommendation.replace(/_/g, ' ')) : '—'}
+                                                {lead.advisor_recommendation
+                                                    ? (recLabel[lead.advisor_recommendation] ?? lead.advisor_recommendation.replace(/_/g, ' '))
+                                                    : '—'}
                                             </td>
-                                            <td style={{ padding: '13px 14px', fontSize: '13px', color: 'var(--grey-500)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.message}</td>
-                                            <td style={{ padding: '13px 14px' }} onClick={e => e.stopPropagation()}>
+                                            <td style={{ padding: '13px 14px', fontSize: '13px', color: 'var(--grey-500)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {lead.message}
+                                            </td>
+                                            <td
+                                                style={{ padding: '13px 14px' }}
+                                                onClick={e => e.stopPropagation()}
+                                            >
                                                 <div style={{ display: 'flex', gap: '6px' }}>
                                                     <button
                                                         onClick={() => onRunAgents(lead)}
@@ -154,7 +201,7 @@ export default function LeadsTable({ leads, onRunAgents, onDelete, onStatusChang
                                                     </button>
                                                     <button
                                                         onClick={() => onDelete(lead.id)}
-                                                        style={{ padding: '5px 8px', borderRadius: 'var(--radius-sm)', background: '#fef2f2', color: 'var(--hot)', fontSize: '11px', fontWeight: 600 }}
+                                                        style={{ padding: '5px 8px', borderRadius: 'var(--radius-sm)', background: '#fef2f2', color: '#dc2626', fontSize: '11px', fontWeight: 600 }}
                                                     >
                                                         ✕
                                                     </button>

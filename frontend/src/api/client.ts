@@ -1,24 +1,17 @@
-import axios from 'axios'
 import type { Lead } from '../types/index.ts'
 
-const api = axios.create({
-    baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
-})
+const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
-export const getLeads = () =>
-    api.get<Lead[]>('/leads/').then(r => r.data)
+const get = (url: string) => fetch(BASE + url).then(r => r.json())
+const post = (url: string, data: any) => fetch(BASE + url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(r => r.json())
+const del = (url: string) => fetch(BASE + url, { method: 'DELETE' })
+const patch = (url: string, data: any) => fetch(BASE + url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(r => r.json())
 
-export const createLead = (data: {
-    name: string; company: string; email: string; message: string
-}) => api.post<Lead>('/leads/', data).then(r => r.data)
-
-export const deleteLead = (id: number) =>
-    api.delete(`/leads/${id}`)
-
-export const updateLeadStatus = (id: number, status: string) =>
-    api.patch<Lead>(`/leads/${id}`, { status }).then(r => r.data)
+export const getLeads = (): Promise<Lead[]> => get('/leads/')
+export const createLead = (data: { name: string; company: string; email: string; message: string }): Promise<Lead> => post('/leads/', data)
+export const deleteLead = (id: number) => del(`/leads/${id}`)
+export const updateLeadStatus = (id: number, status: string): Promise<Lead> => patch(`/leads/${id}`, { status })
 
 export const streamAgentPipeline = (leadId: number): EventSource => {
-    const base = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-    return new EventSource(`${base}/pipeline/run/${leadId}`)
+    return new EventSource(`${BASE}/pipeline/run/${leadId}`)
 }
