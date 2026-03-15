@@ -61,15 +61,20 @@ async def stream_agent_events(lead: Lead, db: Session):
         await asyncio.sleep(0.05)
 
         # Persist to DB
-        lead.score = qualification.score
+        # Persist to DB — use .value to ensure string storage for Postgres
+        lead.score = qualification.score.value if hasattr(qualification.score, 'value') else qualification.score
         lead.qualification_reasoning = f"{qualification.reasoning} | Signals: {', '.join(qualification.key_signals)}"
         lead.followup_email = followup.body
         lead.followup_subject = followup.subject
-        lead.advisor_recommendation = advisor.recommendation
-        lead.advisor_reasoning = advisor.reasoning
-        lead.status = LeadStatus.QUALIFIED
-        db.commit()
-        db.refresh(lead)
+        lead.advisor_recommendation = str(advisor.recommendation)
+        lead.advisor_reasoning = str(advisor.reasoning)
+        lead.status = LeadStatus.QUALIFIED.value
+        try:
+            db.commit()
+            db.refresh(lead)
+        except Exception as e:
+            db.rollback()
+            raise Exception(f"DB commit failed: {str(e)}")
 
         total_tokens = tokens_1 + tokens_2 + tokens_3
         yield f"data: {json.dumps({'event': 'complete', 'lead_id': lead.id, 'total_tokens': total_tokens})}\n\n"
