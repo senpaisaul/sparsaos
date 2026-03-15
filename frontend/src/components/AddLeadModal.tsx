@@ -19,8 +19,7 @@ export default function AddLeadModal({ onClose, onLeadCreated }: Props) {
         }
         setLoading(true)
         try {
-            const lead = await createLead(form)
-            onLeadCreated(lead)
+            onLeadCreated(await createLead(form))
         } catch {
             setError('Failed to create lead. Is the backend running?')
         } finally {
@@ -28,50 +27,63 @@ export default function AddLeadModal({ onClose, onLeadCreated }: Props) {
         }
     }
 
+    const field = (label: string, key: keyof typeof form, type = 'text', placeholder = '') => (
+        <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: 'var(--grey-500)', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: '6px' }}>{label}</label>
+            <input
+                type={type}
+                value={form[key]}
+                onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))}
+                placeholder={placeholder}
+                style={{ width: '100%', padding: '10px 12px', fontSize: '14px', border: '1px solid var(--grey-200)', borderRadius: 'var(--radius-sm)', background: 'var(--white)', color: 'var(--black)' }}
+                onFocus={e => e.target.style.borderColor = 'var(--black)'}
+                onBlur={e => e.target.style.borderColor = 'var(--grey-200)'}
+            />
+        </div>
+    )
+
     return (
-        <div style={{ background: 'rgba(255,255,255,0.35)', backdropFilter: 'blur(32px)', WebkitBackdropFilter: 'blur(32px)', borderRadius: 'var(--border-radius-xl)', border: '1px solid rgba(255,255,255,0.65)', padding: '1.75rem', width: '100%', maxWidth: '460px', boxShadow: '0 24px 64px rgba(31,38,135,0.2), inset 0 1px 0 rgba(255,255,255,0.8)', animation: 'fade-up 0.25s ease' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
-                <div>
-                    <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.5px' }}>Add new lead</h2>
-                    <p style={{ margin: '3px 0 0', fontSize: '13px', color: 'var(--text-muted)' }}>Agents will qualify and score automatically</p>
-                </div>
-                <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.4)', border: '1px solid rgba(255,255,255,0.5)', padding: '5px 10px', color: 'var(--text-secondary)' }}>✕</button>
-            </div>
-
-            {error && (
-                <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 'var(--border-radius-md)', padding: '10px 14px', marginBottom: '1rem' }}>
-                    <p style={{ margin: 0, color: '#dc2626', fontSize: '13px', fontWeight: 600 }}>{error}</p>
-                </div>
-            )}
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
-                {(['name', 'company'] as const).map(f => (
-                    <div key={f}>
-                        <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '5px', fontWeight: 600, textTransform: 'capitalize' }}>{f}</label>
-                        <input type="text" value={form[f]} onChange={e => setForm(p => ({ ...p, [f]: e.target.value }))} placeholder={`Enter ${f}`} />
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', animation: 'fade-in 0.15s ease' }}>
+            <div style={{ background: 'var(--white)', borderRadius: 'var(--radius-xl)', padding: '2rem', width: '100%', maxWidth: '480px', boxShadow: '0 24px 64px rgba(0,0,0,0.18)', animation: 'slide-up 0.2s ease' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.75rem' }}>
+                    <div>
+                        <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--black)', letterSpacing: '-0.4px' }}>Add new lead</h2>
+                        <p style={{ fontSize: '13px', color: 'var(--grey-500)', marginTop: '3px' }}>Agents will qualify and score automatically</p>
                     </div>
-                ))}
-            </div>
+                    <button onClick={onClose} style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--grey-100)', color: 'var(--grey-700)', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+                </div>
 
-            <div style={{ marginBottom: '10px' }}>
-                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '5px', fontWeight: 600 }}>Email</label>
-                <input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} placeholder="contact@company.com" />
-            </div>
+                {error && (
+                    <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 'var(--radius-sm)', padding: '10px 14px', marginBottom: '16px' }}>
+                        <p style={{ fontSize: '13px', color: 'var(--hot)', fontWeight: 500 }}>{error}</p>
+                    </div>
+                )}
 
-            <div style={{ marginBottom: '1.5rem' }}>
-                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '5px', fontWeight: 600 }}>Message</label>
-                <textarea value={form.message} onChange={e => setForm(p => ({ ...p, message: e.target.value }))} rows={4} style={{ resize: 'vertical' }} placeholder="What's their pain point? Who are they? What's the urgency?" />
-            </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                    {field('Name', 'name', 'text', 'Jane Smith')}
+                    {field('Company', 'company', 'text', 'Acme Corp')}
+                </div>
+                {field('Email', 'email', 'email', 'jane@acme.com')}
 
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                <button onClick={onClose} style={{ color: 'var(--text-muted)', padding: '9px 16px' }}>Cancel</button>
-                <button
-                    onClick={handleSubmit}
-                    disabled={loading}
-                    style={{ background: 'linear-gradient(135deg, #8b5cf6, #3b82f6)', color: 'white', border: 'none', padding: '9px 22px', fontWeight: 700, minWidth: '120px', boxShadow: '0 4px 16px rgba(139,92,246,0.35)', borderRadius: 'var(--border-radius-md)', cursor: loading ? 'not-allowed' : 'pointer' }}
-                >
-                    {loading ? 'Creating...' : 'Create lead'}
-                </button>
+                <div style={{ marginBottom: '1.75rem' }}>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: 'var(--grey-500)', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: '6px' }}>Message</label>
+                    <textarea
+                        value={form.message}
+                        onChange={e => setForm(p => ({ ...p, message: e.target.value }))}
+                        rows={4}
+                        placeholder="What's their pain point, urgency, context?"
+                        style={{ width: '100%', padding: '10px 12px', fontSize: '14px', border: '1px solid var(--grey-200)', borderRadius: 'var(--radius-sm)', background: 'var(--white)', color: 'var(--black)', resize: 'vertical' }}
+                        onFocus={e => e.target.style.borderColor = 'var(--black)'}
+                        onBlur={e => e.target.style.borderColor = 'var(--grey-200)'}
+                    />
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                    <button onClick={onClose} style={{ padding: '10px 18px', borderRadius: 'var(--radius-sm)', background: 'var(--grey-100)', color: 'var(--grey-700)', fontSize: '13px', fontWeight: 500 }}>Cancel</button>
+                    <button onClick={handleSubmit} disabled={loading} style={{ padding: '10px 24px', borderRadius: 'var(--radius-sm)', background: 'var(--black)', color: 'var(--white)', fontSize: '13px', fontWeight: 600 }}>
+                        {loading ? 'Creating...' : 'Create lead'}
+                    </button>
+                </div>
             </div>
         </div>
     )

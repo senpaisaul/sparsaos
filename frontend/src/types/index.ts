@@ -11,6 +11,7 @@ export interface Lead {
     score: LeadScore
     qualification_reasoning: string | null
     followup_email: string | null
+    followup_subject: string | null
     advisor_recommendation: string | null
     advisor_reasoning: string | null
     created_at: string
