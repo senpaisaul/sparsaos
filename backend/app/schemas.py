@@ -23,6 +23,7 @@ class LeadResponse(BaseModel):
     score: LeadScore
     qualification_reasoning: Optional[str] = None
     followup_email: Optional[str] = None
+    followup_subject: Optional[str] = None
     advisor_recommendation: Optional[str] = None
     advisor_reasoning: Optional[str] = None
     created_at: datetime
@@ -31,12 +32,10 @@ class LeadResponse(BaseModel):
     class Config:
         from_attributes = True
 
-#Agent output schemas 
-
 class QualificationResult(BaseModel):
     score: LeadScore
     reasoning: str
-    confidence: float  # 0.0 to 1.0
+    confidence: float
     key_signals: list[str]
 
 class FollowupResult(BaseModel):
@@ -46,9 +45,9 @@ class FollowupResult(BaseModel):
     personalization_notes: str
 
 class AdvisorResult(BaseModel):
-    recommendation: str # "schedule_call" | "send_demo" | "offer_discount" | "drop_lead"
+    recommendation: str
     reasoning: str
-    urgency: str # "high" | "medium" | "low"
+    urgency: str
     next_steps: list[str]
 
 class AgentRunResponse(BaseModel):

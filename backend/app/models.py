@@ -30,6 +30,7 @@ class Lead(Base):
 
     qualification_reasoning = Column(Text, nullable=True)
     followup_email = Column(Text, nullable=True)
+    followup_subject = Column(Text, nullable=True)
     advisor_recommendation = Column(Text, nullable=True)
     advisor_reasoning = Column(Text, nullable=True)
 
