@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Lead
-from app.schemas import AgentRunResponse
-from app.agents.orchestrator import run_pipeline
+from app.models import Lead, LeadStatus
+from app.agents.qualifier import qualify_lead
+from app.agents.drafter import draft_followup
+from app.agents.advisor import advise_deal
 import json
 import asyncio
 
@@ -12,36 +13,66 @@ router = APIRouter(prefix="/pipeline", tags=["pipeline"])
 
 
 async def stream_agent_events(lead: Lead, db: Session):
-    """
-    Server-Sent Events generator.
-    Streams agent progress to the frontend in real-time.
-    """
     try:
-        # Event 1: Pipeline started
-        yield f"data: {json.dumps({'event': 'started', 'lead_id': lead.id, 'message': 'Agent pipeline initiated'})}\n\n"
-        await asyncio.sleep(0.1)
+        # Event 1: started
+        yield f"data: {json.dumps({'event': 'started', 'lead_id': lead.id})}\n\n"
+        await asyncio.sleep(0.05)
 
-        # Event 2: Qualification starting
-        yield f"data: {json.dumps({'event': 'agent_start', 'agent': 'qualifier', 'message': f'Qualifying {lead.name} from {lead.company}...'})}\n\n"
-        await asyncio.sleep(0.1)
+        # Event 2: qualifier starting
+        yield f"data: {json.dumps({'event': 'agent_start', 'agent': 'qualifier'})}\n\n"
+        await asyncio.sleep(0.05)
 
-        # Run full pipeline
-        result = await run_pipeline(lead=lead, db=db)
+        # Run qualifier — yield result immediately when done
+        qualification, tokens_1 = await qualify_lead(
+            name=lead.name,
+            company=lead.company,
+            message=lead.message
+        )
 
-        # Event 3: Qualification done
-        yield f"data: {json.dumps({'event': 'agent_done', 'agent': 'qualifier', 'data': {'score': result.qualification.score.value, 'reasoning': result.qualification.reasoning, 'confidence': result.qualification.confidence, 'key_signals': result.qualification.key_signals}})}\n\n"
-        await asyncio.sleep(0.2)
+        yield f"data: {json.dumps({'event': 'agent_done', 'agent': 'qualifier', 'data': {'score': qualification.score.value, 'reasoning': qualification.reasoning, 'confidence': qualification.confidence, 'key_signals': qualification.key_signals}})}\n\n"
+        await asyncio.sleep(0.05)
 
-        # Event 4: Drafter done
-        yield f"data: {json.dumps({'event': 'agent_done', 'agent': 'drafter', 'data': {'subject': result.followup.subject, 'body': result.followup.body, 'tone': result.followup.tone}})}\n\n"
-        await asyncio.sleep(0.2)
+        # Event: drafter + advisor starting
+        yield f"data: {json.dumps({'event': 'agent_start', 'agent': 'drafter'})}\n\n"
+        await asyncio.sleep(0.05)
+        yield f"data: {json.dumps({'event': 'agent_start', 'agent': 'advisor'})}\n\n"
+        await asyncio.sleep(0.05)
 
-        # Event 5: Advisor done
-        yield f"data: {json.dumps({'event': 'agent_done', 'agent': 'advisor', 'data': {'recommendation': result.advisor.recommendation, 'reasoning': result.advisor.reasoning, 'urgency': result.advisor.urgency, 'next_steps': result.advisor.next_steps}})}\n\n"
-        await asyncio.sleep(0.1)
+        # Run drafter + advisor in parallel
+        (followup, tokens_2), (advisor, tokens_3) = await asyncio.gather(
+            draft_followup(
+                name=lead.name,
+                company=lead.company,
+                original_message=lead.message,
+                qualification=qualification
+            ),
+            advise_deal(
+                name=lead.name,
+                company=lead.company,
+                original_message=lead.message,
+                qualification=qualification
+            )
+        )
 
-        # Event 6: Pipeline complete
-        yield f"data: {json.dumps({'event': 'complete', 'lead_id': lead.id, 'total_tokens': result.total_tokens_used})}\n\n"
+        yield f"data: {json.dumps({'event': 'agent_done', 'agent': 'drafter', 'data': {'subject': followup.subject, 'body': followup.body, 'tone': followup.tone}})}\n\n"
+        await asyncio.sleep(0.05)
+
+        yield f"data: {json.dumps({'event': 'agent_done', 'agent': 'advisor', 'data': {'recommendation': advisor.recommendation, 'reasoning': advisor.reasoning, 'urgency': advisor.urgency, 'next_steps': advisor.next_steps}})}\n\n"
+        await asyncio.sleep(0.05)
+
+        # Persist to DB
+        lead.score = qualification.score
+        lead.qualification_reasoning = f"{qualification.reasoning} | Signals: {', '.join(qualification.key_signals)}"
+        lead.followup_email = followup.body
+        lead.followup_subject = followup.subject
+        lead.advisor_recommendation = advisor.recommendation
+        lead.advisor_reasoning = advisor.reasoning
+        lead.status = LeadStatus.QUALIFIED
+        db.commit()
+        db.refresh(lead)
+
+        total_tokens = tokens_1 + tokens_2 + tokens_3
+        yield f"data: {json.dumps({'event': 'complete', 'lead_id': lead.id, 'total_tokens': total_tokens})}\n\n"
 
     except Exception as e:
         yield f"data: {json.dumps({'event': 'error', 'message': str(e)})}\n\n"
@@ -49,7 +80,6 @@ async def stream_agent_events(lead: Lead, db: Session):
 
 @router.get("/run/{lead_id}")
 async def run_agent_pipeline(lead_id: int, db: Session = Depends(get_db)):
-    """Trigger the full 3-agent pipeline for a lead. Streams progress via SSE."""
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
@@ -59,23 +89,21 @@ async def run_agent_pipeline(lead_id: int, db: Session = Depends(get_db)):
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no"
+            "X-Accel-Buffering": "no",
         }
     )
 
 
 @router.post("/run-all")
 async def run_all_unprocessed(db: Session = Depends(get_db)):
-    """Run agents on all unqualified leads. Returns summary."""
     from app.models import LeadStatus
     unqualified = db.query(Lead).filter(Lead.status == LeadStatus.NEW).all()
-
     if not unqualified:
         return {"message": "No new leads to process", "processed": 0}
-
     results = []
     for lead in unqualified:
-        result = await run_pipeline(lead=lead, db=db)
-        results.append({"lead_id": lead.id, "score": result.qualification.score.value})
-
+        qualification, _ = await qualify_lead(
+            name=lead.name, company=lead.company, message=lead.message
+        )
+        results.append({"lead_id": lead.id, "score": qualification.score.value})
     return {"processed": len(results), "results": results}
