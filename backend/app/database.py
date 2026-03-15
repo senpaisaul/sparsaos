@@ -4,27 +4,42 @@ from sqlalchemy.orm import sessionmaker
 import os
 import logging
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./leads.db")
+raw_url = os.environ.get("DATABASE_URL", "NOT SET")
+logger.info(f"RAW DATABASE_URL FROM ENV: '{raw_url}'")
+
+DATABASE_URL = raw_url if raw_url != "NOT SET" else "sqlite:///./leads.db"
 
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
+logger.info(f"FINAL DATABASE_URL: '{DATABASE_URL[:60]}...'")
+
 try:
     if "sqlite" in DATABASE_URL:
-        engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+        logger.warning("USING SQLITE — data will not persist on redeploy")
+        engine = create_engine(
+            DATABASE_URL,
+            connect_args={"check_same_thread": False}
+        )
     else:
+        logger.info("USING POSTGRES — connecting to Supabase")
         engine = create_engine(
             DATABASE_URL,
             pool_pre_ping=True,
             pool_recycle=300,
             connect_args={"connect_timeout": 10}
         )
-    logger.info(f"✅ Database engine created: {DATABASE_URL[:30]}...")
+    logger.info("DATABASE ENGINE CREATED SUCCESSFULLY")
 except Exception as e:
-    logger.error(f"❌ Failed to create database engine: {str(e)}")
-    engine = create_engine("sqlite:///./leads.db", connect_args={"check_same_thread": False})
+    logger.error(f"DATABASE ENGINE CREATION FAILED: {str(e)}")
+    logger.warning("FALLING BACK TO SQLITE")
+    engine = create_engine(
+        "sqlite:///./leads.db",
+        connect_args={"check_same_thread": False}
+    )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
