@@ -1,28 +1,33 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from app.database import get_db
+from app.database import get_db, SessionLocal
 from app.models import Lead, LeadStatus
 from app.agents.qualifier import qualify_lead
 from app.agents.drafter import draft_followup
 from app.agents.advisor import advise_deal
 import json
 import asyncio
+import logging
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/pipeline", tags=["pipeline"])
 
 
-async def stream_agent_events(lead: Lead, db: Session):
+async def stream_agent_events(lead_id: int):
+    db: Session = SessionLocal()
     try:
-        # Event 1: started
+        lead = db.query(Lead).filter(Lead.id == lead_id).first()
+        if not lead:
+            yield f"data: {json.dumps({'event': 'error', 'message': 'Lead not found'})}\n\n"
+            return
+
         yield f"data: {json.dumps({'event': 'started', 'lead_id': lead.id})}\n\n"
         await asyncio.sleep(0.05)
 
-        # Event 2: qualifier starting
         yield f"data: {json.dumps({'event': 'agent_start', 'agent': 'qualifier'})}\n\n"
         await asyncio.sleep(0.05)
 
-        # Run qualifier — yield result immediately when done
         qualification, tokens_1 = await qualify_lead(
             name=lead.name,
             company=lead.company,
@@ -32,13 +37,11 @@ async def stream_agent_events(lead: Lead, db: Session):
         yield f"data: {json.dumps({'event': 'agent_done', 'agent': 'qualifier', 'data': {'score': qualification.score.value, 'reasoning': qualification.reasoning, 'confidence': qualification.confidence, 'key_signals': qualification.key_signals}})}\n\n"
         await asyncio.sleep(0.05)
 
-        # Event: drafter + advisor starting
         yield f"data: {json.dumps({'event': 'agent_start', 'agent': 'drafter'})}\n\n"
         await asyncio.sleep(0.05)
         yield f"data: {json.dumps({'event': 'agent_start', 'agent': 'advisor'})}\n\n"
         await asyncio.sleep(0.05)
 
-        # Run drafter + advisor in parallel
         (followup, tokens_2), (advisor, tokens_3) = await asyncio.gather(
             draft_followup(
                 name=lead.name,
@@ -60,27 +63,31 @@ async def stream_agent_events(lead: Lead, db: Session):
         yield f"data: {json.dumps({'event': 'agent_done', 'agent': 'advisor', 'data': {'recommendation': advisor.recommendation, 'reasoning': advisor.reasoning, 'urgency': advisor.urgency, 'next_steps': advisor.next_steps}})}\n\n"
         await asyncio.sleep(0.05)
 
-        # Persist to DB
-        # Persist to DB — use .value to ensure string storage for Postgres
-        lead.score = qualification.score.value if hasattr(qualification.score, 'value') else qualification.score
-        lead.qualification_reasoning = f"{qualification.reasoning} | Signals: {', '.join(qualification.key_signals)}"
-        lead.followup_email = followup.body
-        lead.followup_subject = followup.subject
-        lead.advisor_recommendation = str(advisor.recommendation)
-        lead.advisor_reasoning = str(advisor.reasoning)
-        lead.status = LeadStatus.QUALIFIED.value
         try:
+            lead.score                    = qualification.score.value
+            lead.qualification_reasoning  = f"{qualification.reasoning} | Signals: {', '.join(qualification.key_signals)}"
+            lead.followup_email           = followup.body
+            lead.followup_subject         = followup.subject
+            lead.advisor_recommendation   = str(advisor.recommendation)
+            lead.advisor_reasoning        = str(advisor.reasoning)
+            lead.status                   = LeadStatus.QUALIFIED.value
             db.commit()
             db.refresh(lead)
+            logger.info(f"✅ Lead {lead_id} saved — score={lead.score}, rec={lead.advisor_recommendation}")
         except Exception as e:
             db.rollback()
-            raise Exception(f"DB commit failed: {str(e)}")
+            logger.error(f"❌ DB commit failed for lead {lead_id}: {str(e)}")
+            yield f"data: {json.dumps({'event': 'error', 'message': f'DB save failed: {str(e)}'})}\n\n"
+            return
 
         total_tokens = tokens_1 + tokens_2 + tokens_3
         yield f"data: {json.dumps({'event': 'complete', 'lead_id': lead.id, 'total_tokens': total_tokens})}\n\n"
 
     except Exception as e:
+        logger.error(f"❌ Pipeline error for lead {lead_id}: {str(e)}")
         yield f"data: {json.dumps({'event': 'error', 'message': str(e)})}\n\n"
+    finally:
+        db.close()
 
 
 @router.get("/run/{lead_id}")
@@ -90,7 +97,7 @@ async def run_agent_pipeline(lead_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Lead not found")
 
     return StreamingResponse(
-        stream_agent_events(lead=lead, db=db),
+        stream_agent_events(lead_id=lead_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -101,7 +108,6 @@ async def run_agent_pipeline(lead_id: int, db: Session = Depends(get_db)):
 
 @router.post("/run-all")
 async def run_all_unprocessed(db: Session = Depends(get_db)):
-    from app.models import LeadStatus
     unqualified = db.query(Lead).filter(Lead.status == LeadStatus.NEW).all()
     if not unqualified:
         return {"message": "No new leads to process", "processed": 0}
