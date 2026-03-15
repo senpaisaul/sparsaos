@@ -2,9 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
 from app.routers import leads, pipeline
+import logging
 
-#Create all tables onn startup
-Base.metadata.create_all(bind=engine)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="SparsaOS - Agentic CRM API",
@@ -12,18 +12,25 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS - allow frontend (vercel) to call this API
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-#Register routers
 app.include_router(leads.router)
 app.include_router(pipeline.router)
+
+@app.on_event("startup")
+async def startup_event():
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("✅ Database tables created successfully")
+    except Exception as e:
+        logger.error(f"❌ Database connection failed: {str(e)}")
+        logger.warning("⚠️ Running without database — leads will not persist")
 
 @app.get("/")
 def health_check():
