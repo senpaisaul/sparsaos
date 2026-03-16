@@ -30,6 +30,8 @@ try:
             DATABASE_URL,
             pool_pre_ping=True,
             pool_recycle=300,
+            pool_size=2,
+            max_overflow=0,
             connect_args={"connect_timeout": 10}
         )
     logger.info("DATABASE ENGINE CREATED SUCCESSFULLY")
